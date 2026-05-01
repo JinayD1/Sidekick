@@ -2,10 +2,11 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { createServer } from 'node:http'
-import { ANTHROPIC_MODEL, API_ORIGIN, APP_ORIGIN, PORT, __dirname, productsPath, providerConfig, tokenPath } from './config.js'
+import { ANTHROPIC_MODEL, API_ORIGIN, PORT, __dirname, productsPath, providerConfig } from './config.js'
 import { callAnthropic, callAnthropicReasoning } from './integrations/anthropic.js'
+import { finishOAuth, getAccessToken, getStatus, readTokens, startOAuth } from './integrations/oauth.js'
 import { checkConfirmation } from './lib/confirm.js'
-import { fetchJson, fetchText, postForm, readJson, redirect, sendJson, setCors } from './lib/http.js'
+import { fetchJson, fetchText, readJson, sendJson, setCors } from './lib/http.js'
 import { batchMap, parseJson } from './lib/utils.js'
 
 const server = createServer(async (req, res) => {
@@ -133,50 +134,6 @@ async function route(req, res) {
   }
 
   sendJson(res, 404, { ok: false, error: 'Not found' })
-}
-
-function startOAuth(res, provider) {
-  const config = providerConfig[provider]
-  if (!config.clientId || !config.clientSecret) {
-    redirect(res, `${APP_ORIGIN}?oauth_error=${provider}_not_configured`)
-    return
-  }
-
-  const authUrl = new URL(config.authUrl)
-  authUrl.searchParams.set('client_id', config.clientId)
-  authUrl.searchParams.set('redirect_uri', config.redirectUri)
-  authUrl.searchParams.set('response_type', 'code')
-  authUrl.searchParams.set('scope', config.scope)
-
-  if (provider === 'google') {
-    authUrl.searchParams.set('access_type', 'offline')
-    authUrl.searchParams.set('prompt', 'consent')
-  } else {
-    authUrl.searchParams.set('prompt', 'select_account')
-  }
-
-  redirect(res, authUrl.toString())
-}
-
-async function finishOAuth(res, provider, url) {
-  const code = url.searchParams.get('code')
-  if (!code) {
-    redirect(res, `${APP_ORIGIN}?oauth_error=${provider}_missing_code`)
-    return
-  }
-
-  const config = providerConfig[provider]
-  const params = new URLSearchParams({
-    client_id: config.clientId,
-    client_secret: config.clientSecret,
-    code,
-    redirect_uri: config.redirectUri,
-    grant_type: 'authorization_code',
-  })
-
-  const token = await postForm(config.tokenUrl, params)
-  await saveProviderToken(provider, normalizeToken(token))
-  redirect(res, `${APP_ORIGIN}?connected=${provider}`)
 }
 
 async function answerFromCloudFiles(emit, message, history) {
@@ -726,59 +683,6 @@ function isLikelyText(mimeType, name) {
     mimeType.includes('csv') ||
     /\.(txt|csv|json|md|tsv)$/i.test(name)
   )
-}
-
-async function getAccessToken(provider) {
-  const tokens = await readTokens()
-  const token = tokens[provider]
-  if (!token) return null
-
-  if (token.access_token && token.expires_at && token.expires_at > Date.now() + 60_000) {
-    return token.access_token
-  }
-
-  if (!token.refresh_token) return token.access_token || null
-
-  const config = providerConfig[provider]
-  const refreshed = await postForm(
-    config.tokenUrl,
-    new URLSearchParams({
-      client_id: config.clientId,
-      client_secret: config.clientSecret,
-      refresh_token: token.refresh_token,
-      grant_type: 'refresh_token',
-    }),
-  )
-  const nextToken = normalizeToken({ ...refreshed, refresh_token: refreshed.refresh_token || token.refresh_token })
-  await saveProviderToken(provider, nextToken)
-  return nextToken.access_token
-}
-
-function normalizeToken(token) {
-  return {
-    ...token,
-    expires_at: Date.now() + Number(token.expires_in || 3600) * 1000,
-  }
-}
-
-async function getStatus() {
-  const tokens = await readTokens()
-  return {
-    google: Boolean(tokens.google?.refresh_token || tokens.google?.access_token),
-    microsoft: Boolean(tokens.microsoft?.refresh_token || tokens.microsoft?.access_token),
-  }
-}
-
-async function readTokens() {
-  if (!existsSync(tokenPath)) return {}
-  return JSON.parse(await readFile(tokenPath, 'utf8'))
-}
-
-async function saveProviderToken(provider, token) {
-  await mkdir(__dirname, { recursive: true })
-  const tokens = await readTokens()
-  tokens[provider] = token
-  await writeFile(tokenPath, JSON.stringify(tokens, null, 2))
 }
 
 function dedupeFiles(files) {
