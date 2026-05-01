@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto'
 import { createServer } from 'node:http'
 import { ANTHROPIC_MODEL, API_ORIGIN, APP_ORIGIN, PORT, __dirname, productsPath, providerConfig, tokenPath } from './config.js'
 import { checkConfirmation } from './lib/confirm.js'
+import { fetchJson, fetchText, postForm, readJson, redirect, sendJson, setCors } from './lib/http.js'
 import { batchMap, parseJson } from './lib/utils.js'
 
 const server = createServer(async (req, res) => {
@@ -829,33 +830,6 @@ async function getStatus() {
   }
 }
 
-async function fetchJson(url, token) {
-  const response = await fetch(url, {
-    headers: { authorization: `Bearer ${token}` },
-  })
-  if (!response.ok) throw new Error(`Cloud API failed: ${response.status} ${await response.text()}`)
-  return response.json()
-}
-
-async function fetchText(url, token) {
-  const response = await fetch(url, {
-    headers: { authorization: `Bearer ${token}` },
-  })
-  if (!response.ok) throw new Error(`File download failed: ${response.status}`)
-  const text = await response.text()
-  return text.slice(0, 12000)
-}
-
-async function postForm(url, params) {
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'content-type': 'application/x-www-form-urlencoded' },
-    body: params,
-  })
-  if (!response.ok) throw new Error(`Token exchange failed: ${response.status} ${await response.text()}`)
-  return response.json()
-}
-
 async function readTokens() {
   if (!existsSync(tokenPath)) return {}
   return JSON.parse(await readFile(tokenPath, 'utf8'))
@@ -886,31 +860,6 @@ function toDisplayFile(file) {
     reason: 'Matched the query in connected cloud storage.',
   }
 }
-
-async function readJson(req) {
-  const chunks = []
-  for await (const chunk of req) chunks.push(chunk)
-  return JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}')
-}
-
-function sendJson(res, status, data) {
-  setCors(res)
-  res.writeHead(status, { 'content-type': 'application/json' })
-  res.end(JSON.stringify(data))
-}
-
-function redirect(res, location) {
-  res.writeHead(302, { location })
-  res.end()
-}
-
-function setCors(res) {
-  res.setHeader('access-control-allow-origin', APP_ORIGIN)
-  res.setHeader('access-control-allow-methods', 'GET,POST,OPTIONS')
-  res.setHeader('access-control-allow-headers', 'content-type')
-}
-
-// ─── Product Launch Agent ────────────────────────────────────────────────────
 
 async function rerankForProductCreate(message, candidates) {
   const DEV_NAME = /changelog|readme|package|license|contributing|config|setup|install|makefile|dockerfile|gruntfile|gemfile|procfile/i
