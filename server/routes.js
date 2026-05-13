@@ -1,13 +1,20 @@
 import { answerFromCloudFiles } from './agents/driveChat.js'
 import { createMockProduct } from './agents/productLaunch.js'
 import { runStorefrontAgent } from './agents/storefrontAgent.js'
-import { ANTHROPIC_MODEL, API_ORIGIN, providerConfig } from './config.js'
+import { ANTHROPIC_MODEL, API_ORIGIN, APP_ORIGIN, providerConfig } from './config.js'
 import { finishOAuth, getAccessToken, readTokens, startOAuth } from './integrations/oauth.js'
 import { createShopifyDraftProduct, isShopifyConfigured } from './integrations/shopify.js'
+import { guardRequest } from './lib/guard.js'
 import { readJson, sendJson, setCors } from './lib/http.js'
 
 // HTTP route table for the Sidekick API.
 export async function route(req, res) {
+  const verdict = guardRequest(req, { appOrigin: APP_ORIGIN, apiOrigin: API_ORIGIN })
+  if (!verdict.ok) {
+    sendJson(res, verdict.status, { ok: false, error: verdict.error })
+    return
+  }
+
   setCors(res)
   if (req.method === 'OPTIONS') {
     res.writeHead(204)
