@@ -87,7 +87,7 @@ docs/                        design notes and screenshots
 
 - Single-merchant, single-store demo: the API guard protects against hostile web pages, but there are no user accounts, and OAuth tokens live in a local file.
 - Product creation sets title, description, tags, media and a single price. Multi-variant options, inventory levels and metafields aren't created yet.
-- The agent loop and Shopify/Anthropic calls don't have mocked integration tests yet; only the safety-critical helpers (confirmation gate, request guard, batching, JSON parsing) are covered.
+- Test coverage targets the safety-critical paths: the confirmation gate (including an end-to-end agent-loop test with Anthropic and Shopify mocked), the request guard, batching and JSON parsing. Audits, Drive search and the UI have no automated tests yet.
 - The dashboard data (orders, customers, analytics) is mocked; only products, pages, themes and collections are live.
 - Confirmation holds are in-memory and reset when the server restarts.
 
